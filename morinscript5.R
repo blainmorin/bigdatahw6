@@ -150,6 +150,43 @@ write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.nam
 
 
 
+#####################################################
+### Tune NN #########################################
+####################################################
+
+levels(test.out) = c("show", "noshow")
+
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+
+nngrid = expand.grid(interaction.depth = 1:8, 
+                      n.trees = seq(50, 400, by = 50),
+                      shrinkage = seq(0, .5, by = .1),
+                      n.minobsinnode = seq(1 , 16, by = 5))
+
+nnfit = train(x = test.preds, 
+               y = test.out, 
+               method = "nnet", 
+               trControl=objControl)
+
+
+
+stopCluster(cl)
+
+
+nnpreds = predict.train(nnfit, newdata = pub.preds, type = "prob")
+nnpreds2 = predict.train(nnfit, newdata = priv.preds, type = "prob")
+
+public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, nnpreds$noshow))
+private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, nnpreds2$noshow))
+
+write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+
+
+
 ####If no finish
 tester = glm(data = Predict_NoShow_Train,
             Status ~ Age + Gender + Diabetes + Alcoholism + Hypertension +
