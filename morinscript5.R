@@ -45,7 +45,7 @@ Predict_NoShow_Train$Handicapped = ifelse(Predict_NoShow_Train$Handicapped >= 1,
 Predict_NoShow_Train$RemindedViaSMS = ifelse(Predict_NoShow_Train$RemindedViaSMS >= 1, 1, 0)
 Predict_NoShow_Train[factors] = as.data.frame(lapply(Predict_NoShow_Train[factors], factor))
 Predict_NoShow_Train = Predict_NoShow_Train %>% select(-c(DateAppointmentWasMade,
-                                                         DateOfAppointment, ID, Tuberculosis))
+                                                         DateOfAppointment, ID, Tuberculosis, DayOfTheWeek, Hypertension, Diabetes))
 
 ### Center and scale continuous predictors (improves gbm predictions)
 Predict_NoShow_Train$Age = scale(Predict_NoShow_Train$Age)
@@ -110,12 +110,25 @@ priv.preds = priv.preds[,-1]
 ######################################
 
 ## Set up parallelization 
+
+levels(test.out) = c("show", "noshow")
+
 cl = makeCluster(4)
 registerDoParallel(cl)
 
+objControl <- trainControl(method='cv', number=10, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
 
+tunegrid = expand.grid(interaction.depth = 1:10, 
+                       n.trees = seq(10, 300, by = 25),
+                       shrinkage = seq(0, .2, by = .05),
+                       n.minobsinnode = seq(0 , 15, by = 5))
 
-
+mbFit =  train(x = test.preds, 
+               y = test.out, 
+               method = "gbm", 
+               trControl=objControl, 
+               verbose = F,
+               tuneGrid = tunegrid)
 
 
 
@@ -126,11 +139,11 @@ stopCluster(cl)
 
 
 
-preds = predict.train(tester, newdata = Predict_NoShow_PublicTest_WithoutLabels)
-preds2 = predict.train(tester, newdata = Predict_NoShow_PrivateTest_WithoutLabels)
+preds = predict.train(mbFit, newdata = pub.preds, type = "prob")
+preds2 = predict.train(mbFit, newdata = priv.preds, type = "prob")
 
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2))
+public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds$noshow))
+private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2$noshow))
 
 write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
