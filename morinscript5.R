@@ -9,6 +9,7 @@ require(caret) || install.packages("caret", dependencies = TRUE)
 require(doParallel) || install.packages("doParallel")
 require(gbm) || install.packages("gbm", dependencies = TRUE)
 require(nnet) || install.packages("nnet", dependencies = TRUE)
+require(mgcv) || installed.packages("mgcv", dependencies = TRUE)
 
 authors = function() {
   c("Blain Morin")
@@ -208,9 +209,47 @@ write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 
 
-print(nnfit)
+
+##################################################
+### Tune GAM ###################################
+##############################################
+
+### Give levels character names (necessary for caret to run)
+levels(test.out) = c("show", "noshow")
+
+### Initialize parallization
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+### Set training parameters
+objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+
+### Make list of tuning parameters to check in the NN model
+gamgrid = expand.grid(size = 2:12, 
+                     decay = seq(0, 1, by = .1))
 
 
+### Train the model
+gamfit = train(x = test.preds, 
+              y = test.out, 
+              method = "gam", 
+              trControl=objControl)
+
+
+
+stopCluster(cl)
+
+### Predict on test sets
+gampreds = predict.train(gamfit, newdata = pub.preds, type = "prob")
+gampreds2 = predict.train(gamfit, newdata = priv.preds, type = "prob")
+
+public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, nnpreds$noshow))
+private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, nnpreds2$noshow))
+
+
+### Write csv
+write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 
 ##################################################
 ### Logistic Regression #######################
