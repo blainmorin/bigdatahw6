@@ -212,27 +212,26 @@ print(nnfit)
 
 
 
+##################################################
+### Logistic Regression #######################
+##############################################
 
 
-
-
-
-
-
-
-####If no finish
-tester = glm(data = Predict_NoShow_Train,
+### Run a basic logistic regression 
+logit = glm(data = Predict_NoShow_Train,
             Status ~ Age + Gender + Diabetes + Alcoholism + Hypertension +
               Handicapped + Smoker + Scholarship + Tuberculosis + RemindedViaSMS +
               DayOfTheWeek + DaysUntilAppointment, family = binomial(link = "logit"))
 
-predict(tester)
 
-preds = predict(tester, newdata = Predict_NoShow_PublicTest_WithoutLabels)
-preds2 = predict(tester, newdata = Predict_NoShow_PrivateTest_WithoutLabels)
+### Predict on the test sets
+logit.preds = predict(logit, newdata = Predict_NoShow_PublicTest_WithoutLabels)
+logit.preds2 = predict(logit, newdata = Predict_NoShow_PrivateTest_WithoutLabels)
 
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2))
+public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, logit.preds))
+private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, logit.preds2))
 
+
+### Write csv
 write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
