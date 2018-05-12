@@ -113,23 +113,22 @@ priv.preds = priv.preds[,-1]
 
 levels(test.out) = c("show", "noshow")
 
-cl = makeCluster(4)
+cl = makeCluster(detectCores())
 registerDoParallel(cl)
 
-objControl <- trainControl(method='cv', number=10, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
 
-tunegrid = expand.grid(interaction.depth = 1:10, 
-                       n.trees = seq(10, 300, by = 25),
-                       shrinkage = seq(0, .2, by = .05),
-                       n.minobsinnode = seq(0 , 15, by = 5))
+gbmgrid = expand.grid(interaction.depth = 1:8, 
+                       n.trees = seq(50, 400, by = 50),
+                       shrinkage = seq(0, .5, by = .1),
+                       n.minobsinnode = seq(1 , 16, by = 5))
 
-mbFit =  train(x = test.preds, 
+gmbfit = train(x = test.preds, 
                y = test.out, 
                method = "gbm", 
                trControl=objControl, 
                verbose = F,
-               tuneGrid = tunegrid)
-
+               tuneGrid = gbmgrid)
 
 
 
@@ -139,8 +138,8 @@ stopCluster(cl)
 
 
 
-preds = predict.train(mbFit, newdata = pub.preds, type = "prob")
-preds2 = predict.train(mbFit, newdata = priv.preds, type = "prob")
+preds = predict.train(gmbfit, newdata = pub.preds, type = "prob")
+preds2 = predict.train(gmbfit, newdata = priv.preds, type = "prob")
 
 public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds$noshow))
 private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2$noshow))
