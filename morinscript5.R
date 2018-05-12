@@ -243,8 +243,8 @@ stopCluster(cl)
 gampreds = predict.train(gamfit, newdata = pub.preds, type = "prob")
 gampreds2 = predict.train(gamfit, newdata = priv.preds, type = "prob")
 
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, nnpreds$noshow))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, nnpreds2$noshow))
+public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, gampreds$noshow))
+private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, gampreds2$noshow))
 
 
 ### Write csv
