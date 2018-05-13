@@ -69,6 +69,96 @@ test.preds = test.preds[,-1]
 test.out = Predict_NoShow_Train$Status
 
 
+
+#############################################################
+### My Best Model ###########################################
+############################################################
+
+
+### Give levels character names (necessary for caret to run)
+levels(test.out) = c("show", "noshow")
+
+### Initialize parallelization
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+
+### Set training paramters
+objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+
+### Create a list of parameters to check
+bestgrid = expand.grid(interaction.depth = 3, 
+                      n.trees = 250,
+                      shrinkage = .1,
+                      n.minobsinnode = 11)
+
+### Train the best gbm model
+bestfit = train(x = test.preds, 
+               y = test.out, 
+               method = "gbm", 
+               trControl=objControl, 
+               verbose = F,
+               tuneGrid = bestgrid)
+
+
+
+stopCluster(cl)
+
+
+
+#########################################################
+### predictNoshow function #############################
+########################################################
+
+predictNoshow = function (x, filename) {
+  
+  ### Identify which columns are factors
+  factors = c("Gender",
+              "Diabetes",
+              "Alcoholism",
+              "Hypertension",
+              "Handicapped",
+              "Smoker",
+              "Scholarship",
+              "Tuberculosis",
+              "RemindedViaSMS",
+              "DayOfTheWeek",
+              "Status")
+  
+  ### Trim low count categories (to match training data)
+  x$Handicapped = ifelse(x$Handicapped >= 1, 1, 0)
+  x$RemindedViaSMS = ifelse(x$RemindedViaSMS >= 1, 1, 0)
+  x = x %>% 
+    select(-c(DateAppointmentWasMade, DateOfAppointment))
+  x[factors[-11]] = 
+    as.data.frame(lapply(x[factors[-11]], factor))
+  
+  ### Center and Scale
+  x$Age = scale(x$Age)
+  x$DaysUntilAppointment = scale(x$DaysUntilAppointment)
+  
+  ### Create model matrix
+  x.preds = model.matrix(~ . , data = x)
+  x.preds = x[,-1]
+  
+  
+  ### Predict no shows using our best model
+  noshows = predict.train(bestfit, newdata = x, type = "prob")
+  
+  ### Create data frame with IDs and probability of no show
+  output = as.data.frame(cbind(x$ID, noshows$noshow))
+  
+  ### Write csv 
+  write.table(output, file = filename, sep = ",", col.names = FALSE, row.names = FALSE)
+  
+  
+}
+
+
+predictNoshow(Predict_NoShow_PublicTest_WithoutLabels, "publictest.csv")
+
+predictNoshow(Predict_NoShow_PrivateTest_WithoutLabels, "privatetest.csv")
+
 ##################################################
 ### Clean Public Data ############################
 #################################################
@@ -268,8 +358,8 @@ gamfit = train(x = test.preds,
               trControl=objControl)
 
 
-
 stopCluster(cl)
+
 
 ### Predict on test sets
 gampreds = predict.train(gamfit, newdata = pub.preds, type = "prob")
@@ -282,8 +372,6 @@ private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, gampr
 ### Write csv
 write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-
-
 
 
 
