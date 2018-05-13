@@ -283,7 +283,10 @@ private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, gampr
 write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 
-print(gamfit)
+
+
+
+
 
 ######################################################
 ### Logistic Regression ############################
