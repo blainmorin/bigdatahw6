@@ -345,11 +345,11 @@ predictNoshow = function (x) {
   
   ### Create model matrix
   x.preds = model.matrix(~ . , data = x)
-  x.preds = pub.preds[,-1]
+  x.preds = x[,-1]
   
   
   ### Predict no shows using our best model
-  noshows = predict.train(gamfit, newdata = x, type = "prob")
+  noshows = predict.train(gmbfit, newdata = x, type = "prob")
   
   ### Create data frame with IDs and probability of no show
   output = as.data.frame(cbind(x$ID, noshows$noshow))
@@ -361,3 +361,7 @@ predictNoshow = function (x) {
    
   
 }
+
+
+
+
