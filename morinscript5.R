@@ -69,9 +69,9 @@ test.preds = test.preds[,-1]
 test.out = Predict_NoShow_Train$Status
 
 
-################################################
-### Clean Public Data ##########################
-###############################################
+##################################################
+### Clean Public Data ############################
+#################################################
 
 
 ### Trim low count categories (to match training data)
@@ -164,6 +164,38 @@ write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.nam
 
 
 
+#####################################################
+### SVM ############################################
+####################################################
+
+### Give levels character names (necessary for caret to run)
+levels(test.out) = c("show", "noshow")
+
+### Initialize parallelization
+cl = makeCluster(detectCores())
+registerDoParallel(cl)
+
+
+### Set training paramters
+objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+
+### Create a list of parameters to check
+svmgrid = expand.grid(interaction.depth = 1:8, 
+                      n.trees = seq(50, 400, by = 50),
+                      shrinkage = seq(0, .5, by = .1),
+                      n.minobsinnode = seq(1 , 16, by = 5))
+
+### Train the svm model
+svmfit = train(x = test.preds, 
+               y = test.out, 
+               method = "svmRadialCost", 
+               trControl=objControl)
+
+
+
+stopCluster(cl)
+
+
 
 #####################################################
 ### Tune NN #########################################
@@ -253,9 +285,9 @@ write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.nam
 
 print(gamfit)
 
+######################################################
+### Logistic Regression ############################
 ##################################################
-### Logistic Regression #######################
-##############################################
 
 
 ### Run a basic logistic regression 
@@ -276,3 +308,56 @@ private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, logit
 ### Write csv
 write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
 write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+
+
+
+
+#########################################################
+### predictNoshow function #############################
+########################################################
+
+predictNoshow = function (x) {
+  
+  ### Identify which columns are factors
+  factors = c("Gender",
+              "Diabetes",
+              "Alcoholism",
+              "Hypertension",
+              "Handicapped",
+              "Smoker",
+              "Scholarship",
+              "Tuberculosis",
+              "RemindedViaSMS",
+              "DayOfTheWeek",
+              "Status")
+  
+  ### Trim low count categories (to match training data)
+  x$Handicapped = ifelse(x$Handicapped >= 1, 1, 0)
+  x$RemindedViaSMS = ifelse(x$RemindedViaSMS >= 1, 1, 0)
+  x = x %>% 
+    select(-c(DateAppointmentWasMade, DateOfAppointment))
+  x[factors[-11]] = 
+    as.data.frame(lapply(x[factors[-11]], factor))
+  
+  ### Center and Scale
+  x$Age = scale(x$Age)
+  x$DaysUntilAppointment = scale(x$DaysUntilAppointment)
+  
+  ### Create model matrix
+  x.preds = model.matrix(~ . , data = x)
+  x.preds = pub.preds[,-1]
+  
+  
+  ### Predict no shows using our best model
+  noshows = predict.train(gamfit, newdata = x, type = "prob")
+  
+  ### Create data frame with IDs and probability of no show
+  output = as.data.frame(cbind(x$ID, noshows$noshow))
+  
+  ### Write csv 
+  write.table(output, file = "predictions.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+  
+  
+   
+  
+}
