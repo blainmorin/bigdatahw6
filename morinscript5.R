@@ -3,6 +3,7 @@
 ##### By Blain Morin ##########################
 ############################################
 
+
 require(readr) || install.packages("readr")
 require(dplyr) || install.packages("dplyr")
 require(caret) || install.packages("caret", dependencies = TRUE)
@@ -11,12 +12,17 @@ require(gbm) || install.packages("gbm", dependencies = TRUE)
 require(nnet) || install.packages("nnet", dependencies = TRUE)
 require(mgcv) || installed.packages("mgcv", dependencies = TRUE)
 
+
 authors = function() {
   c("Blain Morin")
 }
 
-
-set.seed(100)
+#################################################################################
+#### GBM was found to obtain the best fit.            ###########################
+#### The following script reads in the training data, ###########################
+#### trains on the data, and creates a function to    ###########################
+#### which predicts on new data.                      ###########################
+#################################################################################
 
 ### Read in training, private test, and public test data
 Predict_NoShow_Train = read_csv("Predict_NoShow_Train.csv")
@@ -154,305 +160,265 @@ predictNoshow = function (x, filename) {
   
 }
 
-
-predictNoshow(Predict_NoShow_PublicTest_WithoutLabels, "publictest.csv")
-
-predictNoshow(Predict_NoShow_PrivateTest_WithoutLabels, "privatetest.csv")
-
-##################################################
-### Clean Public Data ############################
-#################################################
-
-
-### Trim low count categories (to match training data)
-Predict_NoShow_PublicTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PublicTest_WithoutLabels$Handicapped >= 1, 1, 0)
-Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
-Predict_NoShow_PublicTest_WithoutLabels = Predict_NoShow_PublicTest_WithoutLabels %>% 
-  select(-c(DateAppointmentWasMade, DateOfAppointment))
-Predict_NoShow_PublicTest_WithoutLabels[factors[-11]] = 
-  as.data.frame(lapply(Predict_NoShow_PublicTest_WithoutLabels[factors[-11]], factor))
-
-### Center and Scale
-Predict_NoShow_PublicTest_WithoutLabels$Age = scale(Predict_NoShow_PublicTest_WithoutLabels$Age)
-Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment)
-
-### Create model matrix
-pub.preds = model.matrix(~ . , data = Predict_NoShow_PublicTest_WithoutLabels)
-pub.preds = pub.preds[,-1]
-
-
-############################################
-### Clean Private Data #####################
-###########################################
-
-
-### Trim small and unused categories
-Predict_NoShow_PrivateTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$Handicapped >= 1, 1, 0)
-Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
-Predict_NoShow_PrivateTest_WithoutLabels = Predict_NoShow_PrivateTest_WithoutLabels %>%
-  select(-c(DateAppointmentWasMade,
-            DateOfAppointment))
-Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]] = 
-  as.data.frame(lapply(Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]], factor))
-
-### Center and scale
-Predict_NoShow_PrivateTest_WithoutLabels$Age = scale(Predict_NoShow_PrivateTest_WithoutLabels$Age)
-Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment)
-
-### Create model matrix
-priv.preds = model.matrix(~ . , data = Predict_NoShow_PrivateTest_WithoutLabels)
-priv.preds = priv.preds[,-1]
-
-
-########################################
-### Tune GBM Model ####################
-######################################
-
-### Give levels character names (necessary for caret to run)
-levels(test.out) = c("show", "noshow")
-
-### Initialize parallelization
-cl = makeCluster(detectCores())
-registerDoParallel(cl)
-
-
-### Set training paramters
-objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
-
-### Create a list of parameters to check
-gbmgrid = expand.grid(interaction.depth = 1:8, 
-                       n.trees = seq(50, 400, by = 50),
-                       shrinkage = seq(0, .5, by = .1),
-                       n.minobsinnode = seq(1 , 16, by = 5))
-
-### Train the gbm model
-gmbfit = train(x = test.preds, 
-               y = test.out, 
-               method = "gbm", 
-               trControl=objControl, 
-               verbose = F,
-               tuneGrid = gbmgrid)
-
-
-
-stopCluster(cl)
-
-
-
-
-### Predict on test sets
-preds = predict.train(gmbfit, newdata = pub.preds, type = "prob")
-preds2 = predict.train(gmbfit, newdata = priv.preds, type = "prob")
-
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds$noshow))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2$noshow))
-
-
-### Write csv
-write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-
-
-
-#####################################################
-### SVM ############################################
-####################################################
-
-### Give levels character names (necessary for caret to run)
-levels(test.out) = c("show", "noshow")
-
-### Initialize parallelization
-cl = makeCluster(detectCores())
-registerDoParallel(cl)
-
-
-### Set training paramters
-objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
-
-### Create a list of parameters to check
-svmgrid = expand.grid(interaction.depth = 1:8, 
-                      n.trees = seq(50, 400, by = 50),
-                      shrinkage = seq(0, .5, by = .1),
-                      n.minobsinnode = seq(1 , 16, by = 5))
-
-### Train the svm model
-svmfit = train(x = test.preds, 
-               y = test.out, 
-               method = "svmRadialCost", 
-               trControl=objControl)
-
-
-
-stopCluster(cl)
-
-
-
-#####################################################
-### Tune NN #########################################
-####################################################
-
-### Give levels character names (necessary for caret to run)
-levels(test.out) = c("show", "noshow")
-
-### Initialize parallization
-cl = makeCluster(detectCores())
-registerDoParallel(cl)
-
-### Set training parameters
-objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
-
-### Make list of tuning parameters to check in the NN model
-nngrid = expand.grid(size = 2:12, 
-                      decay = seq(0, 1, by = .1))
-
-
-### Train the model
-nnfit = train(x = test.preds, 
-               y = test.out, 
-               method = "nnet", 
-               trControl=objControl,
-              tuneGrid = nngrid, maxit = 1000)
-
-
-
-stopCluster(cl)
-
-
-### Predict on test sets
-nnpreds = predict.train(nnfit, newdata = pub.preds, type = "prob")
-nnpreds2 = predict.train(nnfit, newdata = priv.preds, type = "prob")
-
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, nnpreds$noshow))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, nnpreds2$noshow))
-
-
-### Write csv
-write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-
-
-
-##################################################
-### Tune GAM ###################################
-##############################################
-
-### Give levels character names (necessary for caret to run)
-levels(test.out) = c("show", "noshow")
-
-### Initialize parallization
-cl = makeCluster(detectCores())
-registerDoParallel(cl)
-
-### Set training parameters
-objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
-
-### Make list of tuning parameters to check in the NN model
-gamgrid = expand.grid(size = 2:12, 
-                     decay = seq(0, 1, by = .1))
-
-
-### Train the model
-gamfit = train(x = test.preds, 
-              y = test.out, 
-              method = "gam", 
-              trControl=objControl)
-
-
-stopCluster(cl)
-
-
-### Predict on test sets
-gampreds = predict.train(gamfit, newdata = pub.preds, type = "prob")
-gampreds2 = predict.train(gamfit, newdata = priv.preds, type = "prob")
-
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, gampreds$noshow))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, gampreds2$noshow))
-
-
-### Write csv
-write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-
-
-
-
-######################################################
-### Logistic Regression ############################
-##################################################
-
-
-### Run a basic logistic regression 
-logit = glm(data = Predict_NoShow_Train,
-            Status ~ Age + Gender + Diabetes + Alcoholism + Hypertension +
-              Handicapped + Smoker + Scholarship + Tuberculosis + RemindedViaSMS +
-              DayOfTheWeek + DaysUntilAppointment, family = binomial(link = "logit"))
-
-
-### Predict on the test sets
-logit.preds = predict(logit, newdata = Predict_NoShow_PublicTest_WithoutLabels)
-logit.preds2 = predict(logit, newdata = Predict_NoShow_PrivateTest_WithoutLabels)
-
-public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, logit.preds))
-private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, logit.preds2))
-
-
-### Write csv
-write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-
-
-
-
-#########################################################
-### predictNoshow function #############################
-########################################################
-
-predictNoshow = function (x) {
-  
-  ### Identify which columns are factors
-  factors = c("Gender",
-              "Diabetes",
-              "Alcoholism",
-              "Hypertension",
-              "Handicapped",
-              "Smoker",
-              "Scholarship",
-              "Tuberculosis",
-              "RemindedViaSMS",
-              "DayOfTheWeek",
-              "Status")
-  
-  ### Trim low count categories (to match training data)
-  x$Handicapped = ifelse(x$Handicapped >= 1, 1, 0)
-  x$RemindedViaSMS = ifelse(x$RemindedViaSMS >= 1, 1, 0)
-  x = x %>% 
-    select(-c(DateAppointmentWasMade, DateOfAppointment))
-  x[factors[-11]] = 
-    as.data.frame(lapply(x[factors[-11]], factor))
-  
-  ### Center and Scale
-  x$Age = scale(x$Age)
-  x$DaysUntilAppointment = scale(x$DaysUntilAppointment)
-  
-  ### Create model matrix
-  x.preds = model.matrix(~ . , data = x)
-  x.preds = x[,-1]
-  
-  
-  ### Predict no shows using our best model
-  noshows = predict.train(gmbfit, newdata = x, type = "prob")
-  
-  ### Create data frame with IDs and probability of no show
-  output = as.data.frame(cbind(x$ID, noshows$noshow))
-  
-  ### Write csv 
-  write.table(output, file = "predictions.csv", sep = ",", col.names = FALSE, row.names = FALSE)
-  
-  
-   
-  
-}
-
-
+### Can use these to predict on public and private data
+#predictNoshow(Predict_NoShow_PublicTest_WithoutLabels, "publictest.csv")
+
+#predictNoshow(Predict_NoShow_PrivateTest_WithoutLabels, "privatetest.csv")
+
+
+
+
+
+###################################################################################################
+################ The code below is for other models ###############################################
+################## which did not perform as well #################################################
+##################################################################################################
+
+
+
+
+# ##################################################
+# ### Clean Public Data ############################
+# #################################################
+# 
+# 
+# ### Trim low count categories (to match training data)
+# Predict_NoShow_PublicTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PublicTest_WithoutLabels$Handicapped >= 1, 1, 0)
+# Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
+# Predict_NoShow_PublicTest_WithoutLabels = Predict_NoShow_PublicTest_WithoutLabels %>% 
+#   select(-c(DateAppointmentWasMade, DateOfAppointment))
+# Predict_NoShow_PublicTest_WithoutLabels[factors[-11]] = 
+#   as.data.frame(lapply(Predict_NoShow_PublicTest_WithoutLabels[factors[-11]], factor))
+# 
+# ### Center and Scale
+# Predict_NoShow_PublicTest_WithoutLabels$Age = scale(Predict_NoShow_PublicTest_WithoutLabels$Age)
+# Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment)
+# 
+# ### Create model matrix
+# pub.preds = model.matrix(~ . , data = Predict_NoShow_PublicTest_WithoutLabels)
+# pub.preds = pub.preds[,-1]
+# 
+#
+# ############################################
+# ### Clean Private Data #####################
+# ###########################################
+# 
+# 
+# ### Trim small and unused categories
+# Predict_NoShow_PrivateTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$Handicapped >= 1, 1, 0)
+# Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
+# Predict_NoShow_PrivateTest_WithoutLabels = Predict_NoShow_PrivateTest_WithoutLabels %>%
+#   select(-c(DateAppointmentWasMade,
+#             DateOfAppointment))
+# Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]] = 
+#   as.data.frame(lapply(Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]], factor))
+# 
+# ### Center and scale
+# Predict_NoShow_PrivateTest_WithoutLabels$Age = scale(Predict_NoShow_PrivateTest_WithoutLabels$Age)
+# Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment)
+# 
+# ### Create model matrix
+# priv.preds = model.matrix(~ . , data = Predict_NoShow_PrivateTest_WithoutLabels)
+# priv.preds = priv.preds[,-1]
+# 
+# 
+# ########################################
+# ### Tune GBM Model ####################
+# ######################################
+# 
+# ### Give levels character names (necessary for caret to run)
+# levels(test.out) = c("show", "noshow")
+# 
+# ### Initialize parallelization
+# cl = makeCluster(detectCores())
+# registerDoParallel(cl)
+# 
+# 
+# ### Set training paramters
+# objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+# 
+# ### Create a list of parameters to check
+# gbmgrid = expand.grid(interaction.depth = 1:8, 
+#                        n.trees = seq(50, 400, by = 50),
+#                        shrinkage = seq(0, .5, by = .1),
+#                        n.minobsinnode = seq(1 , 16, by = 5))
+# 
+# ### Train the gbm model
+# gmbfit = train(x = test.preds, 
+#                y = test.out, 
+#                method = "gbm", 
+#                trControl=objControl, 
+#                verbose = F,
+#                tuneGrid = gbmgrid)
+# 
+# 
+# 
+# stopCluster(cl)
+# 
+# 
+# 
+# 
+# ### Predict on test sets
+# preds = predict.train(gmbfit, newdata = pub.preds, type = "prob")
+# preds2 = predict.train(gmbfit, newdata = priv.preds, type = "prob")
+# 
+# public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, preds$noshow))
+# private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, preds2$noshow))
+# 
+# 
+# ### Write csv
+# write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# 
+# 
+# 
+# #####################################################
+# ### SVM ############################################
+# ####################################################
+# 
+# ### Give levels character names (necessary for caret to run)
+# levels(test.out) = c("show", "noshow")
+# 
+# ### Initialize parallelization
+# cl = makeCluster(detectCores())
+# registerDoParallel(cl)
+# 
+# 
+# ### Set training paramters
+# objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+# 
+# ### Create a list of parameters to check
+# svmgrid = expand.grid(interaction.depth = 1:8, 
+#                       n.trees = seq(50, 400, by = 50),
+#                       shrinkage = seq(0, .5, by = .1),
+#                       n.minobsinnode = seq(1 , 16, by = 5))
+# 
+# ### Train the svm model
+# svmfit = train(x = test.preds, 
+#                y = test.out, 
+#                method = "svmRadialCost", 
+#                trControl=objControl)
+# 
+# 
+# 
+# stopCluster(cl)
+# 
+# 
+# 
+# #####################################################
+# ### Tune NN #########################################
+# ####################################################
+# 
+# ### Give levels character names (necessary for caret to run)
+# levels(test.out) = c("show", "noshow")
+# 
+# ### Initialize parallization
+# cl = makeCluster(detectCores())
+# registerDoParallel(cl)
+# 
+# ### Set training parameters
+# objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+# 
+# ### Make list of tuning parameters to check in the NN model
+# nngrid = expand.grid(size = 2:12, 
+#                       decay = seq(0, 1, by = .1))
+# 
+# 
+# ### Train the model
+# nnfit = train(x = test.preds, 
+#                y = test.out, 
+#                method = "nnet", 
+#                trControl=objControl,
+#               tuneGrid = nngrid, maxit = 1000)
+# 
+# 
+# 
+# stopCluster(cl)
+# 
+# 
+# ### Predict on test sets
+# nnpreds = predict.train(nnfit, newdata = pub.preds, type = "prob")
+# nnpreds2 = predict.train(nnfit, newdata = priv.preds, type = "prob")
+# 
+# public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, nnpreds$noshow))
+# private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, nnpreds2$noshow))
+# 
+# 
+# ### Write csv
+# write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# 
+# 
+# 
+# ##################################################
+# ### Tune GAM ###################################
+# ##############################################
+# 
+# ### Give levels character names (necessary for caret to run)
+# levels(test.out) = c("show", "noshow")
+# 
+# ### Initialize parallization
+# cl = makeCluster(detectCores())
+# registerDoParallel(cl)
+# 
+# ### Set training parameters
+# objControl <- trainControl(method='cv', number=5, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+# 
+# ### Make list of tuning parameters to check in the NN model
+# gamgrid = expand.grid(size = 2:12, 
+#                      decay = seq(0, 1, by = .1))
+# 
+# 
+# ### Train the model
+# gamfit = train(x = test.preds, 
+#               y = test.out, 
+#               method = "gam", 
+#               trControl=objControl)
+# 
+# 
+# stopCluster(cl)
+# 
+# 
+# ### Predict on test sets
+# gampreds = predict.train(gamfit, newdata = pub.preds, type = "prob")
+# gampreds2 = predict.train(gamfit, newdata = priv.preds, type = "prob")
+# 
+# public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, gampreds$noshow))
+# private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, gampreds2$noshow))
+# 
+# 
+# ### Write csv
+# write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# 
+# 
+# 
+# 
+# ######################################################
+# ### Logistic Regression ############################
+# ##################################################
+# 
+# 
+# ### Run a basic logistic regression 
+# logit = glm(data = Predict_NoShow_Train,
+#             Status ~ Age + Gender + Diabetes + Alcoholism + Hypertension +
+#               Handicapped + Smoker + Scholarship + Tuberculosis + RemindedViaSMS +
+#               DayOfTheWeek + DaysUntilAppointment, family = binomial(link = "logit"))
+# 
+# 
+# ### Predict on the test sets
+# logit.preds = predict(logit, newdata = Predict_NoShow_PublicTest_WithoutLabels)
+# logit.preds2 = predict(logit, newdata = Predict_NoShow_PrivateTest_WithoutLabels)
+# 
+# public = as.data.frame(cbind(Predict_NoShow_PublicTest_WithoutLabels$ID, logit.preds))
+# private = as.data.frame(cbind(Predict_NoShow_PrivateTest_WithoutLabels$ID, logit.preds2))
+# 
+# 
+# ### Write csv
+# write.table(public, file = "public.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# write.table(private, file = "private.csv", sep = ",", col.names = FALSE, row.names = FALSE)
+# 
+# 
+# 
 
 
