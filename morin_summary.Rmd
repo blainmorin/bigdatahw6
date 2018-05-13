@@ -1,0 +1,89 @@
+---
+title: "Summary"
+author: "Blain Morin"
+date: "May 12, 2018"
+output: 
+  html_document:
+    theme: journal
+---
+
+```{r, echo = FALSE, message = FALSE}
+library(readr)
+library(dplyr)
+Predict_NoShow_PublicTest_WithoutLabels = read_csv("Predict_NoShow_PublicTest_WithoutLabels.csv")
+Predict_NoShow_PrivateTest_WithoutLabels = read_csv("Predict_NoShow_PrivateTest_WithoutLabels.csv")
+
+
+### Identify which columns are factors
+factors = c("Gender",
+            "Diabetes",
+            "Alcoholism",
+            "Hypertension",
+            "Handicapped",
+            "Smoker",
+            "Scholarship",
+            "Tuberculosis",
+            "RemindedViaSMS",
+            "DayOfTheWeek",
+            "Status")
+##################################################
+### Clean Public Data ############################
+#################################################
+
+
+### Trim low count categories (to match training data)
+Predict_NoShow_PublicTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PublicTest_WithoutLabels$Handicapped >= 1, 1, 0)
+Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PublicTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
+Predict_NoShow_PublicTest_WithoutLabels = Predict_NoShow_PublicTest_WithoutLabels %>%
+  select(-c(DateAppointmentWasMade, DateOfAppointment))
+Predict_NoShow_PublicTest_WithoutLabels[factors[-11]] =
+  as.data.frame(lapply(Predict_NoShow_PublicTest_WithoutLabels[factors[-11]], factor))
+
+### Center and Scale
+Predict_NoShow_PublicTest_WithoutLabels$Age = scale(Predict_NoShow_PublicTest_WithoutLabels$Age)
+Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PublicTest_WithoutLabels$DaysUntilAppointment)
+
+### Create model matrix
+pub.preds = model.matrix(~ . , data = Predict_NoShow_PublicTest_WithoutLabels)
+pub.preds = pub.preds[,-1]
+
+
+############################################
+### Clean Private Data #####################
+###########################################
+
+
+### Trim small and unused categories
+Predict_NoShow_PrivateTest_WithoutLabels$Handicapped = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$Handicapped >= 1, 1, 0)
+Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS = ifelse(Predict_NoShow_PrivateTest_WithoutLabels$RemindedViaSMS >= 1, 1, 0)
+Predict_NoShow_PrivateTest_WithoutLabels = Predict_NoShow_PrivateTest_WithoutLabels %>%
+  select(-c(DateAppointmentWasMade,
+            DateOfAppointment))
+Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]] =
+  as.data.frame(lapply(Predict_NoShow_PrivateTest_WithoutLabels[factors[-11]], factor))
+
+### Center and scale
+Predict_NoShow_PrivateTest_WithoutLabels$Age = scale(Predict_NoShow_PrivateTest_WithoutLabels$Age)
+Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment = scale(Predict_NoShow_PrivateTest_WithoutLabels$DaysUntilAppointment)
+
+### Create model matrix
+priv.preds = model.matrix(~ . , data = Predict_NoShow_PrivateTest_WithoutLabels)
+priv.preds = priv.preds[,-1]
+
+```
+
+First, I examined the training data:
+
+```{r, message = FALSE}
+
+Predict_NoShow_Train = read_csv("Predict_NoShow_Train.csv")
+summary(Predict_NoShow_Train)
+
+```
+
+
+The summary allows us to identify the factor and continuous variables and also sheds light on the prevalance of certain conditions (which will come in handy later when we decide which variables should be used as predictors). We know right away that we can drop ID, the date the appointment was made, and the date of the appointment because these likely will not have predictive power. 
+
+Next, I cleaned the data by identifying factors, centering and scaling variables, and creating a model matrix.I also examined how many patients were in each factor bin, and eliminated the factors where there was a large discrepency.
+
+I then ran a basic logistic regression using all the variables. Although its prediction accuracy was fairly good, the loss was greater than 1 (which was far behind the public leaderboard). I decided to try 4 algorithms that could improve the logistic loss: GBM, SVM, Neural Networks, and GAM. For each, I used the caret package to help tune the parameters. GBM gave the best logistic loss value. Using the results from GBM, I eliminated the predictors with low influence and reran the model. This edited GBM run is what I used in my predictNoshow function. Overall, my best logistic loss on the public leader board was .60875.
